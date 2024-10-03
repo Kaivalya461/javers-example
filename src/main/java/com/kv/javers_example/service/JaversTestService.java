@@ -7,20 +7,19 @@ import com.kv.javers_example.model.Address;
 import com.kv.javers_example.model.Employee;
 import com.kv.javers_example.model.MyDrug;
 import lombok.extern.log4j.Log4j2;
+import org.javers.core.ChangesByObject;
 import org.javers.core.Javers;
 import org.javers.core.JaversBuilder;
 import org.javers.core.diff.Change;
 import org.javers.core.diff.Diff;
-import org.javers.core.diff.changetype.InitialValueChange;
-import org.javers.core.diff.changetype.NewObject;
-import org.javers.core.diff.changetype.ObjectRemoved;
-import org.javers.core.diff.changetype.ValueChange;
+import org.javers.core.diff.changetype.*;
 import org.javers.core.diff.changetype.container.ContainerChange;
 import org.javers.core.diff.changetype.container.ListChange;
 import org.javers.core.diff.changetype.container.ValueAdded;
 import org.javers.core.diff.changetype.container.ValueRemoved;
 import org.javers.core.metamodel.object.InstanceId;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 
 import java.lang.reflect.Field;
 import java.util.*;
@@ -176,6 +175,58 @@ public class JaversTestService {
                 });
 
         return changeFieldsDtoList;
+    }
+
+    private void processAddRemoveDiffAndReturnChangeFieldDtoForNDC(Diff diff, List<MyChangeFieldsDto> changeFieldsDtoList) {
+        String ndcClassPropertyName = "Drug";
+        List<ChangesByObject> ndcValueChangesList = diff.groupByObject()
+                .stream()
+                .filter(changesByObject -> ndcClassPropertyName.equals(changesByObject.getGlobalId().getTypeName()))
+                .toList();
+
+        if(!CollectionUtils.isEmpty(ndcValueChangesList)) {
+
+            ndcValueChangesList.forEach(changesByObject -> {
+                log.info("Found NDC Value Changes for NDC -> {}", changesByObject.getGlobalId().masterObjectId());
+                StringBuilder fieldValueSb = new StringBuilder();
+
+                changesByObject.get()
+                        .stream()
+                        .filter(change -> change instanceof ValueChange)
+                        .filter(change -> !(change instanceof InitialValueChange))
+                        .filter(change -> !(change instanceof TerminalValueChange))
+                        .map(change -> (ValueChange) change)
+                        .forEach(valueChange -> {
+                            prepareIndividualElementChangeStringBuilder(valueChange, fieldValueSb);
+                        });
+
+                if(!fieldValueSb.isEmpty()) {
+                    //Eg: Below Display output
+                    // NDC: 68308-115-01
+                    // Amount: 55.0 to 66.0
+                    // Quantity: 10 to 5
+                    String changeObjectKey = "NDC: " + ((InstanceId) changesByObject.getGlobalId()).getCdoId() + "\n";
+
+                    MyChangeFieldsDto myChangeFieldsDto = new MyChangeFieldsDto();
+                    myChangeFieldsDto.setFieldName(ndcClassPropertyName + ":");
+                    myChangeFieldsDto.setFieldValue(changeObjectKey + fieldValueSb);
+                    log.info(myChangeFieldsDto.getFieldValue());
+                    changeFieldsDtoList.add(myChangeFieldsDto);
+                }
+            });
+        }
+    }
+
+    private void prepareIndividualElementChangeStringBuilder(ValueChange valueChange, StringBuilder fieldValue) {
+        if(!fieldValue.isEmpty()) {
+            fieldValue.append("\n");
+        }
+        fieldValue
+                .append(valueChange.getPropertyName())
+                .append(": ")
+                .append(valueChange.getLeft())
+                .append(" TO ")
+                .append(valueChange.getRight());
     }
 
 
